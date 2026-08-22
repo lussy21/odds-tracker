@@ -2,13 +2,12 @@ name: Odds Tracker Bot
 
 on:
   schedule:
-    # Τρέχει αυτόματα κάθε μέρα στις 08:00 π.μ. (UTC)
     - cron: '0 8 * * *'
-  workflow_dispatch: # Επιτρέπει και τη χειροκίνητη εκτέλεση οποιαδήποτε στιγμή
+  workflow_dispatch:
 
 jobs:
   run-bot:
-    runs-runs-on: ubuntu-latest
+    runs-on: ubuntu-latest
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
@@ -27,3 +26,4 @@ jobs:
         env:
           GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
         run: python main.py
+
