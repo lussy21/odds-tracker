@@ -2,84 +2,109 @@ import os
 import datetime
 import requests
 import cloudscraper
+from bs4 import BeautifulSoup
 
-def get_sofascore_matches():
-    # Ημερομηνία σημερινή σε μορφή YYYY-MM-DD
-    today = datetime.datetime.now().strftime('%Y-%m-%d')
-    url = f"https://api.sofascore.com/api/v3/scheduled-events/{today}"
+def get_complete_data():
+    scraper = cloudscraper.create_scraper(
+        browser={'browser': 'chrome', 'platform': 'windows', 'desktop': True}
+    )
     
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-    }
-
-    scraper = cloudscraper.create_scraper()
-    
+    # --- 1. SCRAPING ARBWORLD (Τζίροι & Ποσοστά) ---
+    arb_data = {}
     try:
-        # 1. Λήψη αγώνων από Sofascore
-        res = scraper.get(url, headers=headers, timeout=15)
-        data = res.json()
-        events = data.get('events', [])
+        arb_url = "https://www.arbworld.net/en/money-way/football"
+        res_arb = scraper.get(arb_url, timeout=15)
+        soup = BeautifulSoup(res_arb.text, "html.parser")
+        rows = soup.find_all("tr", class_=["row1", "row2"])
 
-        matches = []
-        for ev in events[:20]: # Παίρνουμε τους πρώτους 20 αγώνες
+        for row in rows:
+            cols = row.find_all("td")
+            if len(cols) >= 6:
+                match_name = cols[1].text.strip().lower()
+                volume = cols[4].text.strip()
+                fav_perc = cols[5].text.strip()
+                
+                # Καθαρισμός τζίρου για ταξινόμηση (π.χ. "€ 5,000" -> 5000)
+                try:
+                    vol_num = int(volume.replace("€", "").replace(",", "").replace(" ", "").strip())
+                except:
+                    vol_num = 0
+
+                arb_data[match_name] = {
+                    "volume": volume,
+                    "vol_num": vol_num,
+                    "fav_perc": fav_perc
+                }
+    except Exception as e:
+        print(f"Arbworld Error: {e}")
+
+    # --- 2. API SOFASCORE (Αγώνες & Αποδόσεις) ---
+    today = datetime.datetime.now().strftime('%Y-%m-%d')
+    sofa_url = f"https://api.sofascore.com/api/v3/scheduled-events/{today}"
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+
+    final_results = []
+    try:
+        res_sofa = scraper.get(sofa_url, headers=headers, timeout=15)
+        events = res_sofa.json().get('events', [])
+
+        for ev in events:
             league = ev.get('tournament', {}).get('name', '-')
             home = ev.get('homeTeam', {}).get('name', '-')
             away = ev.get('awayTeam', {}).get('name', '-')
             
-            # Θέσεις στη βαθμολογία (αν υπάρχουν)
-            home_pos = ev.get('homeTeam', {}).get('ranking', '-')
-            away_pos = ev.get('awayTeam', {}).get('ranking', '-')
+            home_pos = str(ev.get('homeTeam', {}).get('ranking', '-'))
+            away_pos = str(ev.get('awayTeam', {}).get('ranking', '-'))
 
-            # ID Αγώνα για λήψη αποδόσεων από Sofascore
-            event_id = ev.get('id')
-            open_home, close_home, open_away, close_away = "-", "-", "-", "-"
-            
-            if event_id:
-                try:
-                    odds_url = f"https://api.sofascore.com/api/v3/event/{event_id}/odds/1/all"
-                    odds_res = scraper.get(odds_url, headers=headers, timeout=5)
-                    odds_data = odds_res.json()
-                    
-                    # Εξαγωγή αποδόσεων
-                    choices = odds_data.get('markets', [])[0].get('choices', [])
-                    for c in choices:
-                        if c.get('name') == '1':
-                            close_home = str(c.get('fractionalValue', '-'))
-                            open_home = str(c.get('initialFractionalValue', close_home))
-                        elif c.get('name') == '2':
-                            close_away = str(c.get('fractionalValue', '-'))
-                            open_away = str(c.get('initialFractionalValue', close_away))
-                except:
-                    pass
+            # Search Match στο Arbworld
+            match_key = f"{home} - {away}".lower()
+            arb_info = arb_data.get(match_key, {"volume": "-", "vol_num": 0, "fav_perc": "-"})
 
-            matches.append([
-                league, # LEAGUE
-                home, # HOME
-                away, # AWAY
-                home_pos, # Home Θέση
-                away_pos, # Away Θέση
-                open_home, # Open odds home
-                close_home, # Close odds home
-                open_away, # Open odds away
-                close_away, # Close odds away
-                "-", # TZOIROS (Arbworld)
-                "-", # Φαβορί % (Arbworld)
-                "-", # Κόντρα %
-                "-", # Sofascore %
-                "-" # Πρόβλεψη
-            ])
-        return matches
+            # Υπολογισμός Κόντρας %
+            try:
+                fav_num = float(arb_info["fav_perc"].replace("%", "").strip())
+                kontra_perc = f"{round(100 - fav_num, 1)}%"
+            except:
+                kontra_perc = "-"
+
+            final_results.append({
+                "vol_num": arb_info["vol_num"],
+                "row": [
+                    league, # LEAGUE
+                    home, # HOME
+                    away, # AWAY
+                    home_pos, # Home Θέση
+                    away_pos, # Away Θέση
+                    "-", # Open odds home
+                    "-", # Close odds home
+                    "-", # Open odds away
+                    "-", # Close odds away
+                    arb_info["volume"], # TZOIROS
+                    arb_info["fav_perc"],# Φαβορί %
+                    kontra_perc, # Κόντρα %
+                    "-", # Sofascore %
+                    "-" # Πρόβλεψη
+                ]
+            })
+
     except Exception as e:
-        print(f"Error Sofascore: {e}")
-        return []
+        print(f"Sofascore Error: {e}")
 
+    # --- 3. ΤΑΞΙΝΟΜΗΣΗ ΒΑΣΕΙ ΤΖΙΡΟΥ (Μεγαλύτερος -> Μικρότερος) ---
+    final_results.sort(key=lambda x: x["vol_num"], reverse=True)
+    
+    return [item["row"] for item in final_results]
+
+# --- 4. ΑΠΟΣΤΟΛΗ ΣΤΟ GOOGLE SHEETS ---
 WEBAPP_URL = os.environ.get("WEBAPP_URL")
-data_list = get_sofascore_matches()
 
-if data_list:
-    for match in data_list:
-        payload = {"values": match}
-        requests.post(WEBAPP_URL, json=payload)
-    print(f"Στάλθηκαν {len(data_list)} αγώνες από το Sofascore επιτυχώς!")
+if WEBAPP_URL:
+    data = get_complete_data()
+    if data:
+        for row in data:
+            requests.post(WEBAPP_URL, json={"values": row})
+        print(f"Στάλθηκαν {len(data)} αγώνες ταξινομημένοι βάσει τζίρου!")
+    else:
+        print("Δεν βρέθηκαν δεδομένα.")
 else:
-    print("Δεν βρέθηκαν δεδομένα.")
+    print("Error: WEBAPP_URL is missing!")
