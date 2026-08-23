@@ -1,34 +1,34 @@
+import json
 import os
 import requests
-import pandas as pd
 
-print("=== ΕΚΚΙΝΗΣΗ ODDS TRACKER BOT (FAVORITE VS DOUBLE CHANCE) ===")
+# Παίρνει το Web App URL από τα secrets του GitHub
+url = os.environ["WEBAPP_URL"]
 
-# 15 Στοχευμένες Διοργανώσεις
-TARGET_LEAGUES = [
-    "Premier League", "LaLiga", "Serie A", "Bundesliga", "Ligue 1",
-    "Super League", "Champions League", "Europa League", "Conference League",
-    "Super Lig", "Jupiler Pro League", "Superliga", "Eredivisie", 
-    "Liga Portugal", "Premiership"
-]
+# Παράδειγμα δεδομένων (αντιστοιχούν στις στήλες LEAGUE, HOME, AWAY, κτλ.)
+data = {
+    "values": [
+        "Premier League",
+        "Arsenal",
+        "Chelsea",
+        "1",
+        "3",
+        "2.10",
+        "2.05",
+        "3.40",
+        "3.50",
+        "5000",
+        "55%",
+        "45%",
+        "7.8",
+        "1X",
+    ]
+}
 
-SHEET_URL = os.environ.get("GOOGLE_SHEET_URL", "Not Set")
+# Αποστολή δεδομένων στο Google Sheet
+response = requests.post(url, json=data)
 
-def fetch_stoiximan_data():
-    print("1. Συλλογή αποδόσεων (Φαβορί & Διπλή Ευκαιρία) από Stoiximan...")
-
-def fetch_sofascore_data():
-    print("2. Συλλογή ποσοστών κοινού (Φαβορί vs Κόντρα) από Sofascore...")
-
-def fetch_arbworld_data():
-    print("3. Συλλογή τζίρων & όγκου χρημάτων από Arbworld...")
-
-def update_google_sheet():
-    print(f"4. Ενημέρωση Google Sheet ({SHEET_URL})...")
-
-if __name__ == "__main__":
-    fetch_stoiximan_data()
-    fetch_sofascore_data()
-    fetch_arbworld_data()
-    update_google_sheet()
-    print("=== Η ΔΙΑΔΙΚΑΣΙΑ ΟΛΟΚΛΗΡΩΘΗΚΕ ΕΠΙΤΥΧΩΣ ===")
+if response.status_code == 200:
+    print("Τα δεδομένα προστέθηκαν επιτυχώς στο Google Sheet!")
+else:
+    print(f"Σφάλμα κατά την αποστολή: {response.status_code}")
